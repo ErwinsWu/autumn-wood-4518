@@ -1,58 +1,102 @@
-import { useEffect } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
-import 'leaflet/dist/leaflet.css';
-import L from 'leaflet';
+import { useRef, useEffect, useState } from 'react';
+// 1. 引入必要的组件
+import Map, { Marker, NavigationControl } from 'react-map-gl/maplibre'; 
+import type { MapRef } from 'react-map-gl'; 
+import 'maplibre-gl/dist/maplibre-gl.css'; 
+// 2. 引入新图标：太阳和月亮
+import { EnvironmentOutlined, SunOutlined, MoonOutlined } from '@ant-design/icons';
+import { Button, Tooltip } from 'antd'; // 引入 Antd 按钮组件
 
-// --- 修复 Leaflet 默认图标在 Webpack/Vite 下不显示的问题 ---
-import icon from 'leaflet/dist/images/marker-icon.png';
-import iconShadow from 'leaflet/dist/images/marker-shadow.png';
+// --- 定义两套地图样式 URL ---
+const DARK_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
+const LIGHT_STYLE = 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json';
 
-let DefaultIcon = L.icon({
-    iconUrl: icon,
-    shadowUrl: iconShadow,
-    iconSize: [25, 41],
-    iconAnchor: [12, 41]
-});
-L.Marker.prototype.options.icon = DefaultIcon;
+const markerStyle: React.CSSProperties = {
+  color: '#1890ff',
+  fontSize: '36px',
+  filter: 'drop-shadow(0 0 10px rgba(24, 144, 255, 0.8))',
+  animation: 'pulse-glow 2s ease-in-out infinite',
+  cursor: 'pointer',
+  transform: 'translateY(-50%)'
+};
 
-// --- 辅助组件：用于控制地图跳转 ---
-// Leaflet 的 MapContainer 是不可变的，需要这个钩子来改变视角
-function ChangeView({ center, zoom }: { center: [number, number]; zoom: number }) {
-  const map = useMap();
-  useEffect(() => {
-    map.flyTo(center, zoom, {
-      duration: 2 // 动画持续2秒，丝滑飞过去
-    });
-  }, [center, zoom, map]); // 当 center 或 zoom 变化时触发
-  return null;
-}
-
-// --- 主地图组件 ---
 interface TravelMapProps {
-  center: [number, number]; // 经纬度 [纬度, 经度]
-  zoom: number;             // 缩放级别
+  center: [number, number]; 
+  zoom: number;
 }
 
 export default function TravelMap({ center, zoom }: TravelMapProps) {
+  const mapRef = useRef<MapRef>(null);
+  
+  // --- 新增：控制深色模式的状态 ---
+  const [isDarkMode, setIsDarkMode] = useState(true);
+
+  useEffect(() => {
+    if (mapRef.current) {
+      mapRef.current.flyTo({
+        center: [center[1], center[0]], 
+        zoom: zoom,
+        pitch: 60, 
+        bearing: 0, 
+        duration: 2000, 
+        essential: true 
+      });
+    }
+  }, [center, zoom]);
+
   return (
-    <MapContainer 
-      center={center} 
-      zoom={zoom} 
-      style={{ height: '300px', width: '100%', borderRadius: '8px', marginBottom: '20px', zIndex: 0 }}
-      scrollWheelZoom={false} // 禁止鼠标滚轮缩放，防止在大页面滚动时卡住
-    >
-      <TileLayer
-        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-      />
-      {/* 这是一个隐形的组件，负责监听坐标变化并移动地图 */}
-      <ChangeView center={center} zoom={zoom} />
-      
-      <Marker position={center}>
-        <Popup>
-          这里是您的目的地！
-        </Popup>
-      </Marker>
-    </MapContainer>
+    <div style={{ position: 'relative', width: '100%', height: '400px' }}>
+      <Map
+        ref={mapRef}
+        initialViewState={{
+          longitude: center[1], 
+          latitude: center[0],  
+          zoom: zoom,
+          pitch: 60, 
+          bearing: -15 
+        }}
+        // --- 样式升级：根据状态动态切换 mapStyle ---
+        mapStyle={isDarkMode ? DARK_STYLE : LIGHT_STYLE}
+        
+        style={{ 
+          width: '100%', 
+          height: '100%', 
+          borderRadius: '16px',
+          // 根据模式调整阴影颜色，浅色模式阴影淡一点
+          boxShadow: isDarkMode 
+            ? '0 10px 30px -5px rgba(0, 0, 0, 0.5)' 
+            : '0 10px 30px -5px rgba(0, 0, 0, 0.2)', 
+        }}
+        scrollZoom={false}
+        dragRotate={true}
+        touchZoomRotate={true}
+      >
+        {/* 标准导航控件 (默认在右上角) */}
+        <NavigationControl position="top-right" visualizePitch={true} />
+
+        {/* 标记点 */}
+        <Marker longitude={center[1]} latitude={center[0]} anchor="bottom">
+          <EnvironmentOutlined style={markerStyle} />
+        </Marker>
+
+        {/* --- 自定义切换按钮 --- */}
+        {/* 我们使用绝对定位，把它放在导航控件的左侧 */}
+        <div style={{ position: 'absolute', top: 10, right: 50, zIndex: 1 }}>
+          <Tooltip title={isDarkMode ? "切换到浅色模式" : "切换到深色模式"}>
+            <Button
+              shape="circle"
+              icon={isDarkMode ? <SunOutlined /> : <MoonOutlined />}
+              onClick={() => setIsDarkMode(!isDarkMode)}
+              style={{
+                backgroundColor: isDarkMode ? 'rgba(255,255,255,0.2)' : 'white', // 深色模式下半透明，浅色下白色
+                color: isDarkMode ? 'white' : '#333',
+                border: isDarkMode ? '1px solid rgba(255,255,255,0.3)' : '1px solid #d9d9d9',
+                boxShadow: '0 2px 6px rgba(0,0,0,0.2)'
+              }}
+            />
+          </Tooltip>
+        </div>
+      </Map>
+    </div>
   );
 }
